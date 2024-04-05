@@ -112,9 +112,9 @@ class UserManagementApp:
         action_frame = ttk.Frame(self.master)
         action_frame.pack(fill=tk.X, pady=10)
 
-        ttk.Button(action_frame, text="Ajouter", command=self.add_user_dialog).pack(side=tk.LEFT, padx=10)
-        ttk.Button(action_frame, text="Modifier", command=self.modify_user_dialog).pack(side=tk.LEFT, padx=10)
-        ttk.Button(action_frame, text="Supprimer", command=self.delete_user_dialog).pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="Ajouter", command=self.add_user).pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="Modifier", command=self.modify_user).pack(side=tk.LEFT, padx=10)
+        ttk.Button(action_frame, text="Supprimer", command=self.delete_user).pack(side=tk.LEFT, padx=10)
 
         self.populate_user_list()  # Peupler avec des données simulées pour l'exemple
 
@@ -125,28 +125,41 @@ class UserManagementApp:
         for user in users:
             self.user_list.insert('', 'end', values=user)
 
-    def add_user_dialog(self):
+    def add_user(self):
         # Ici, vous ouvririez un dialogue/formulaire pour ajouter un utilisateur
         messagebox.showinfo("Ajouter un Utilisateur", "Fonctionnalité à implémenter.")
 
-    def modify_user_dialog(self):
+    def modify_user(self):
         # Dialogue/formulaire pour modifier un utilisateur
         messagebox.showinfo("Modifier un Utilisateur", "Fonctionnalité à implémenter.")
 
-    def delete_user_dialog(self):
-        # Demander confirmation avant de supprimer un utilisateur
-        selected_item = self.user_list.selection()
-        if selected_item:
-            user = self.user_list.item(selected_item, "values")
-            response = messagebox.askyesno("Supprimer Utilisateur", f"Êtes-vous sûr de vouloir supprimer l'utilisateur {user[0]} ?")
-            if response:
-                self.delete_user(user)
-        else:
-            messagebox.showerror("Erreur", "Veuillez sélectionner un utilisateur à supprimer.")
+    def delete_user(self):
+        selected_items = self.user_list.selection()  # Récupère la liste des items sélectionnés
+        if selected_items:
+            # Construire le message de confirmation basé sur le nombre d'utilisateurs sélectionnés
+            if len(selected_items) == 1:
+                user = self.user_list.item(selected_items[0], "values")
+                confirmation_message = f"Êtes-vous sûr de vouloir supprimer l'utilisateur {user[0]} ?"
+            else:
+                user_list_str = "\n- ".join([self.user_list.item(item, "values")[0] for item in selected_items])
+                confirmation_message = f"Êtes-vous sûr de vouloir supprimer ces utilisateurs ? :\n- {user_list_str}"
 
-    def delete_user(self, user):
-        # Ici, vous enverriez la requête de suppression à votre API
-        messagebox.showinfo("Supprimer", f"L'utilisateur {user[0]} a été supprimé.")
+            # Afficher la boîte de dialogue de confirmation
+            response = messagebox.askyesno("Supprimer Utilisateurs", confirmation_message)
+            if response:
+                try:
+                    # Supprime chaque utilisateur sélectionné de la liste
+                    for selected_item in selected_items:
+                        self.user_list.delete(selected_item)
+                    # Message de confirmation adapté au nombre d'utilisateurs supprimés
+                    if len(selected_items) == 1:
+                        messagebox.showinfo("Supprimer", f"L'utilisateur {user[0]} a été supprimé.")
+                    else:
+                        messagebox.showinfo("Supprimer", "Les utilisateurs sélectionnés ont été supprimés.")
+                except Exception as e:
+                    messagebox.showerror("Erreur", f"Erreur lors de la suppression des utilisateurs: {e}")
+        else:
+            messagebox.showerror("Erreur", "Veuillez sélectionner au moins un utilisateur à supprimer.")
 
     def clear_widgets(self):
         for widget in self.master.winfo_children():
