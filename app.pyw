@@ -16,12 +16,14 @@ class UserManagementApp:
         self.logo_light_path = "admin-desktop-app/logo-light-mode.png"
         self.logo_dark_path = "admin-desktop-app/logo-dark-mode.png"
 
-        self.token = ""
+        self.access_token = None
+        self.refresh_token = None
+        
         self.init_login_ui()  # Commencez par l'interface de connexion
         self.center_window(500, 350)  # Taille initiale de la fenêtre de connexion
 
     def init_login_ui(self):
-        self.clear_widgets()  # Nettoyez l'interface avant d'afficher le nouvel UI
+        self.clear_widgets()
 
         # Toggle et texte du dark mode en haut
         self.theme_frame = ttk.Frame(self.master)
@@ -32,7 +34,7 @@ class UserManagementApp:
         # Cadre dédié pour le logo, placé en dessous de la frame du toggle du dark mode
         self.logo_frame = ttk.Frame(self.master)
         self.logo_frame.pack(side="top", fill="x", expand=False)
-        self.load_logo_image(self.logo_dark_path if self.dark_theme.get() else self.logo_light_path)  # Chargement initial du logo
+        self.load_logo_image(self.logo_dark_path if self.dark_theme.get() else self.logo_light_path)
 
         # Configuration du cadre de connexion
         self.login_frame = ttk.Frame(self.master)
@@ -61,21 +63,28 @@ class UserManagementApp:
 
         # Cadre pour le dark mode et le bouton de déconnexion
         top_frame = ttk.Frame(self.master)
-        top_frame.pack(side="top", fill="x", pady=(5, 0), padx=10)
-        
+        top_frame.pack(side="top", fill="x", pady=(0, 0), padx=0)
+
         # Bouton switch pour le dark mode à gauche
         self.theme_toggle = ttk.Checkbutton(top_frame, text="Dark mode", command=self.toggle_theme, style="Switch.TCheckbutton", variable=self.dark_theme)
         self.theme_toggle.pack(side="left", padx=10)
-        
-        # Bouton de Déconnexion à droite (à l'emplacement précédent du bouton Rafraîchir)
+
+        # Bouton de Déconnexion à droite
         logout_button = ttk.Button(top_frame, text="Déconnexion", command=self.logout)
-        logout_button.pack(side="right", padx=10)
+        logout_button.pack(side="right", pady=(10, 0), padx=10)
+
+        # Nouvelle frame spécifiquement pour le logo, placée en dessous des boutons et au-dessus de la liste des utilisateurs
+        logo_frame = ttk.Frame(self.master)
+        logo_frame.pack(side="top", fill="x", pady=(0, 0))  # Espacement pour séparer visuellement du reste
+        self.logo_frame = logo_frame  # Mise à jour de la référence de self.logo_frame
+        # Chargement et affichage du logo au centre
+        self.load_logo_image(self.logo_dark_path if self.dark_theme.get() else self.logo_light_path)
 
         # Configuration du cadre principal pour la liste des utilisateurs et les scrollbars
         tree_scroll_frame = ttk.Frame(self.master)
         tree_scroll_frame.pack(fill=tk.BOTH, expand=True, pady=10, padx=10)
 
-        self.user_list = ttk.Treeview(tree_scroll_frame, columns=("ID", "Nom", "Prénom", "Email", "Adresse", "Rôle"), show="headings")
+        self.user_list = ttk.Treeview(tree_scroll_frame, columns=("ID", "Username", "Nom", "Prénom", "Email", "Adresse", "Rôle"), show="headings")
         self.user_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(tree_scroll_frame, orient="vertical", command=self.user_list.yview)
@@ -86,6 +95,7 @@ class UserManagementApp:
             self.user_list.heading(col, text=col)
             self.user_list.column(col, width=120)
             self.user_list.column("ID", width=10)
+            self.user_list.column("ID", width=50)
             self.user_list.column("Nom", width=50)
             self.user_list.column("Prénom", width=50)
             self.user_list.column("Rôle", width=50)
@@ -94,7 +104,6 @@ class UserManagementApp:
         action_frame = ttk.Frame(self.master)
         action_frame.pack(fill=tk.X, pady=10, side="bottom")
 
-        # Placement du bouton Rafraîchir en bas à droite
         refresh_button = ttk.Button(action_frame, text="Rafraîchir", command=self.refresh_user_list)
         refresh_button.pack(side="right", padx=10)
 
@@ -103,6 +112,7 @@ class UserManagementApp:
         ttk.Button(action_frame, text="Supprimer", command=self.delete_user, width=15).pack(side="left", padx=10)
 
         self.populate_user_list()
+
 
     def init_add_user_ui(self):
         self.clear_widgets()
@@ -149,9 +159,10 @@ class UserManagementApp:
             return
 
         user_id = self.user_list.item(selected_item, "values")[0]
+        username = self.user_list.item(selected_item, "values")[1]
 
         try:
-            response = requests.get(f"http://peer.cesi/api/user/find/{user_id}", headers={"Authorization": f"Bearer {self.token}"})
+            response = requests.get(f"http://peer.cesi/api/user/find/{user_id}", headers={"Authorization": f"Bearer {self.access_token}"})
             if response.status_code == 200:
                 user_details = response.json()
             else:
@@ -215,7 +226,12 @@ class UserManagementApp:
         self.master.geometry('%dx%d+%d+%d' % (width, height, x, y))
 
     def load_logo_image(self, logo_path):
-        # Détruire le widget de logo existant s'il existe
+        # Assurez-vous que logo_frame existe et est valide avant de continuer
+        if not hasattr(self, 'logo_frame') or not self.logo_frame.winfo_exists():
+            self.logo_frame = ttk.Frame(self.master)
+            self.logo_frame.pack(side="top", fill="x", expand=False)
+            
+        # Détruire le widget de logo existant s'il existe et est valide
         if hasattr(self, 'logo_label') and self.logo_label.winfo_exists():
             self.logo_label.destroy()
 
@@ -223,9 +239,12 @@ class UserManagementApp:
         logo_img = Image.open(logo_path).resize((177, 70))
         self.logo_image = ImageTk.PhotoImage(logo_img)
 
-        # Créer un nouveau widget de logo avec l'image chargée
-        self.logo_label = ttk.Label(self.logo_frame, image=self.logo_image)
-        self.logo_label.pack(pady=10)  # Centrer le logo dans le cadre.
+        # Essayer de créer un nouveau widget de logo avec l'image chargée
+        try:
+            self.logo_label = ttk.Label(self.logo_frame, image=self.logo_image)
+            self.logo_label.pack(pady=10)  # Centrer le logo dans le cadre.
+        except tk.TclError as e:
+            print(f"Erreur lors de la mise à jour du logo : {e}")
 
     def toggle_theme(self):
         sv_ttk.set_theme("light" if not self.dark_theme.get() else "dark", )
@@ -240,7 +259,7 @@ class UserManagementApp:
             if response.status_code == 200:
                 response_data = response.json()
                 self.access_token = response_data.get('access_token')
-                self.refresh_token = response_data.get('refresh_token')  # Optionnel: stockez ceci si nécessaire
+                self.refresh_token = response_data.get('refresh_token')
                 self.user_role = response_data.get('role')  # Stockez le rôle de l'utilisateur
                 
                 if self.user_role == "admin":
@@ -264,7 +283,8 @@ class UserManagementApp:
                 users_data = response.json()
                 for user in users_data:
                     self.user_list.insert('', tk.END, values=(
-                        user["id"],  # Assurez-vous que cela correspond au champ renvoyé par votre API
+                        user["id"],
+                        user["username"],  # Assurez-vous que ceci correspond au champ renvoyé par votre API
                         user["nom"], 
                         user["prenom"], 
                         user["email"], 
@@ -324,11 +344,11 @@ class UserManagementApp:
             "email": self.user_fields["Email"].get(),
             "nom": self.user_fields["Nom"].get(),
             "prenom": self.user_fields["Prenom"].get(),
-            "role": self.user_fields["Role"].get(),  # Assurez-vous que cette valeur est acceptée par votre API
+            "role": self.user_fields["Role"].get(), 
             "username": self.user_fields["Username"].get(),
         }
 
-        # Vérifiez si le champ mot de passe est rempli
+        # Vérifier si le champ mot de passe est rempli
         password = self.user_fields["Password"].get()
         if password.strip():  # Si le champ n'est pas vide
             # Hashage du mot de passe
@@ -336,7 +356,7 @@ class UserManagementApp:
             updated_data["password"] = hashed_password
 
         # Préparer les headers pour inclure le token d'authentification
-        headers = {"Authorization": f"Bearer {self.token}"}
+        headers = {"Authorization": f"Bearer {self.access_token}"}
         
         try:
             # Envoi de la requête PUT
@@ -356,24 +376,33 @@ class UserManagementApp:
             messagebox.showerror("Erreur", "Veuillez sélectionner au moins un utilisateur à supprimer.")
             return
 
-        if not messagebox.askyesno("Supprimer Utilisateurs", "Êtes-vous sûr de vouloir supprimer l'utilisateur sélectionné ?"):
-            return  # L'utilisateur a choisi de ne pas procéder à la suppression
+        # Construire le message de confirmation basé sur le nombre d'utilisateurs sélectionnés
+        if len(selected_items) == 1:
+            user = self.user_list.item(selected_items[0], "values")
+            confirmation_message = f"Êtes-vous sûr de vouloir supprimer l'utilisateur {user[1]} ?"  # Assumer que user[1] est le nom
+        else:
+            user_names = "\n- ".join([self.user_list.item(item, "values")[1] for item in selected_items])  # Assumer que user[1] est le nom
+            confirmation_message = f"Êtes-vous sûr de vouloir supprimer ces utilisateurs ? :\n- {user_names}"
 
-        headers = {"Authorization": f"Bearer {self.access_token}"}
+        # Afficher la boîte de dialogue de confirmation
+        response = messagebox.askyesno("Supprimer Utilisateurs", confirmation_message)
+        if response:
+            for selected_item in selected_items:
+                user_id = self.user_list.item(selected_item, "values")[0]  # Assumer que user[0] est l'ID
+                try:
+                    # Suppression de l'utilisateur via l'API
+                    headers = {"Authorization": f"Bearer {self.access_token}"}
+                    response = requests.delete(f"http://peer.cesi/api/user/delete/{user_id}", headers=headers)
+                    if response.status_code == 200:
+                        self.user_list.delete(selected_item)  # Supprimer de l'affichage si la suppression est réussie
+                except requests.exceptions.RequestException as e:
+                    messagebox.showerror("Erreur de connexion", f"Erreur lors de la connexion à l'API : {e}")
 
-        for selected_item in selected_items:
-            user = self.user_list.item(selected_item, "values")
-            user_id = user[0]  # Assumer que l'ID de l'utilisateur est la première colonne
-            try:
-                response = requests.delete(f"http://peer.cesi/api/user/delete/{user_id}", headers=headers)
-
-                if response.status_code == 200:
-                    self.user_list.delete(selected_item)
-                    messagebox.showinfo("Suppression réussie", f"L'utilisateur {user[1]} a été supprimé avec succès.")  # user[1] suppose être le nom de l'utilisateur
-                else:
-                    messagebox.showerror("Erreur de suppression", f"Échec de la suppression de l'utilisateur {user[1]}. Code d'erreur : {response.status_code}")
-            except requests.exceptions.RequestException as e:
-                messagebox.showerror("Erreur de connexion", f"Erreur lors de la connexion à l'API : {e}")
+            # Affichage du message de succès adapté au nombre d'utilisateurs supprimés
+            if len(selected_items) == 1:
+                messagebox.showinfo("Supprimer", "L'utilisateur a été supprimé avec succès.")
+            else:
+                messagebox.showinfo("Supprimer", "Les utilisateurs sélectionnés ont été supprimés avec succès.")
 
     def clear_widgets(self):
         for widget in self.master.winfo_children():
@@ -383,10 +412,11 @@ class UserManagementApp:
             widget.destroy()
             
     def logout(self):
-        self.token = ""  # Nettoyez le token d'accès
-        self.clear_widgets()  # Nettoyez l'interface avant d'afficher le nouvel UI
-        self.init_login_ui()  # Ramenez l'utilisateur à l'interface de connexion
-        self.center_window(500, 350)  # Ajustez la fenêtre à la taille initiale de la fenêtre de connexion
+        self.access_token = None
+        self.refresh_token = None
+        self.clear_widgets()
+        self.center_window(500, 350) 
+        self.init_login_ui()
 
 if __name__ == "__main__":
     root = tk.Tk()
